@@ -2,7 +2,7 @@
 
 这是一个面向 **0 基础学习者** 的大模型入门教程项目。
 
-项目目标不是直接堆 API，而是用尽量朴素的语言和可运行的 notebook，把大模型训练前最基础、最容易被跳过的部分讲清楚：
+用尽量朴素的语言和可运行的 notebook，把大模型训练前最容易被跳过的部分讲清楚：
 
 - 文本为什么要先变成数字
 - tokenizer 是怎么把文本切成 token ID 的
@@ -21,7 +21,7 @@
 ## 项目结构
 
 ```text
-llm-basics-from-scratch-cn/
+llm-from-scratch-note/
 ├─ data/
 │  └─ the-verdict.txt
 ├─ exports/
@@ -30,7 +30,7 @@ llm-basics-from-scratch-cn/
 ├─ notebooks/
 │  └─ ch02_text_data_processing.ipynb
 ├─ scripts/
-│  └─ export_vscode_style.py
+│  └─ export.py
 ├─ requirements.txt
 ├─ .gitignore
 ├─ LICENSE
@@ -60,7 +60,7 @@ Python 依赖见 `requirements.txt`：
 进入项目目录：
 
 ```bash
-cd llm-basics-from-scratch-cn
+cd llm-from-scratch-note
 ```
 
 创建虚拟环境：
@@ -97,10 +97,10 @@ jupyter lab notebooks/ch02_text_data_processing.ipynb
 
 ## 重新导出 PDF
 
-项目里带了一个导出脚本，会把 notebook 导出为带自定义样式的 HTML 和 PDF：
+项目里带了一个导出脚本，会把 notebook 导出为 nbconvert 原始风格的 HTML 和 PDF：
 
 ```bash
-python scripts/export_vscode_style.py
+python scripts/export.py
 ```
 
 输出文件：
