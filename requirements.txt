@@ -1,0 +1,7 @@
+torch
+tiktoken
+requests
+jupyter
+nbconvert
+pypdfium2
+websocket-client
