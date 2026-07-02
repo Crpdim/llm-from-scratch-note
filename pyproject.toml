@@ -1,0 +1,18 @@
+[project]
+name = "llm-from-scratch-note"
+version = "0.1.0"
+description = "从零手写大模型入门教程 — 面向中文初学者的 LLM 教程"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0",
+    "tiktoken",
+    "requests",
+    "jupyter",
+    "nbconvert",
+    "pypdfium2",
+    "websocket-client",
+    "numpy>=2.4.6",
+]
+
+[tool.uv]
+dev-dependencies = []

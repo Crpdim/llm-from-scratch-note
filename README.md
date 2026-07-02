@@ -42,10 +42,11 @@ llm-from-scratch-note/
 推荐环境：
 
 - Python 3.11 或更高版本
+- [uv](https://docs.astral.sh/uv/)（Python 包管理器）
 - VS Code 或 JupyterLab
 - Windows/macOS/Linux 均可
 
-Python 依赖见 `requirements.txt`：
+Python 依赖见 `pyproject.toml`：
 
 - `torch`
 - `tiktoken`
@@ -63,34 +64,16 @@ Python 依赖见 `requirements.txt`：
 cd llm-from-scratch-note
 ```
 
-创建虚拟环境：
+安装依赖（uv 会自动创建虚拟环境）：
 
 ```bash
-python -m venv .venv
-```
-
-Windows PowerShell：
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-macOS/Linux：
-
-```bash
-source .venv/bin/activate
-```
-
-安装依赖：
-
-```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 打开 notebook：
 
 ```bash
-jupyter lab notebooks/ch02_text_data_processing.ipynb
+uv run jupyter lab notebooks/ch02_text_data_processing.ipynb
 ```
 
 也可以直接用 VS Code 打开整个项目目录，然后运行 notebook。
@@ -100,7 +83,7 @@ jupyter lab notebooks/ch02_text_data_processing.ipynb
 项目里带了一个导出脚本，会把 notebook 导出为 nbconvert 原始风格的 HTML 和 PDF：
 
 ```bash
-python scripts/export.py
+uv run python scripts/export.py
 ```
 
 输出文件：

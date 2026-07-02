@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>ch02_text_data_processing</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
+<title>ch03_attention_mechanisms</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <style type="text/css">
     pre { line-height: 125%; }
 td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
@@ -7796,64 +7796,83 @@ a.anchor-link {
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
 <main>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=04e57803">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=aaf053f0">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="%E7%AC%AC2%E7%AB%A0-%E6%96%87%E6%9C%AC%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86%E2%80%94%E2%80%94%E4%BB%8E%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%88%B0%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%85%A5">第2章 文本数据处理——从字符串到模型输入<a class="anchor-link" href="#%E7%AC%AC2%E7%AB%A0-%E6%96%87%E6%9C%AC%E6%95%B0%E6%8D%AE%E5%A4%84%E7%90%86%E2%80%94%E2%80%94%E4%BB%8E%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%88%B0%E6%A8%A1%E5%9E%8B%E8%BE%93%E5%85%A5">¶</a></h1>
+<h1 id="%E7%AC%AC3%E7%AB%A0-%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9C%BA%E5%88%B6%E2%80%94%E2%80%94%E8%AE%A9%E6%A8%A1%E5%9E%8B%E5%AD%A6%E4%BC%9A%22%E8%AF%BB%E6%87%82%22%E4%B8%8A%E4%B8%8B%E6%96%87">第3章 注意力机制——让模型学会"读懂"上下文<a class="anchor-link" href="#%E7%AC%AC3%E7%AB%A0-%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9C%BA%E5%88%B6%E2%80%94%E2%80%94%E8%AE%A9%E6%A8%A1%E5%9E%8B%E5%AD%A6%E4%BC%9A%22%E8%AF%BB%E6%87%82%22%E4%B8%8A%E4%B8%8B%E6%96%87">¶</a></h1><blockquote>
+<p>Ch02 走完了"文本 → token ID → embedding → 位置编码 → 输入张量"整条链路，数据准备好了。</p>
+<p>本章回答的核心问题：<strong>一堆 token 向量摆在那里，模型怎么知道哪些 token 之间有语义关联？</strong></p>
+</blockquote>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=cded6df0">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e80a39a3">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>开门见山：注意力机制就是大模型核心中的核心。</p>
+<p>如果用一句话概括大模型在干什么，就是"分析一句话里每个 token 之间的关系，然后预测下一个 token"。</p>
+<p>注意力机制负责前半句——<strong>分析 token 之间的关系</strong>。没有它，模型看到的就是一堆互不相干的词，根本搞不清"it"指的是"cat"还是"mat"。</p>
+<p>这一章我们就来拆解这个机制到底是怎么算的。</p>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=128eee54">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <blockquote>
-<p>大模型的输入是文本，怎么进行训练和推理？</p>
+<p>大模型的训练目标很简单：</p>
+<p>给定上文，猜下一个 token。比如看到 "I love"，应该猜出 "you"。模型内部靠什么猜？</p>
+<p>靠的是理解 "I"、"love" 这些 token 之间的语法和语义关系——这恰恰是注意力机制要提供的。</p>
+<p>所以，理解注意力，就是理解大模型怎么"看懂"一句话。</p>
 </blockquote>
-<p>一个很自然的问题：我们平时看到的文字，模型是怎么"读懂"的？它只是一堆矩阵运算，不认识字，只认识<strong>数字</strong>。所以 Chapter 2 只做一件事：<strong>把自然语言一步步变成模型能计算的数字</strong>。</p>
-<p>怎么变？分四步走，从笨办法一路升级到工业方案：</p>
-<ol>
-<li><strong>自己写个最简陋的分词器（文本-&gt;数字转换工具）</strong> → 理解"词表"和"token ID"到底是什么</li>
-<li><strong>换成 BPE 子词分词</strong> → 解决"词表里没有的词怎么办"（GPT-2 的方案）</li>
-<li><strong>用滑动窗口切出训练样本</strong> → 每道题都是"看到前面，猜下一个"</li>
-<li><strong>token ID → 向量 + 位置编码</strong> → 变成模型真正能吃的输入</li>
-</ol>
-<p>下面一步步来。</p>
-<hr/>
-<h3 id="%E5%AE%8C%E6%95%B4%E6%95%B0%E6%8D%AE%E6%B5%81%EF%BC%88%E5%AD%A6%E5%AE%8C%E6%9C%AC%E7%AB%A0%E5%9B%9E%E5%A4%B4%E7%9C%8B%E8%BF%99%E5%BC%A0%E5%9B%BE%E5%B0%B1%E5%A4%9F%EF%BC%89">完整数据流（学完本章回头看这张图就够）<a class="anchor-link" href="#%E5%AE%8C%E6%95%B4%E6%95%B0%E6%8D%AE%E6%B5%81%EF%BC%88%E5%AD%A6%E5%AE%8C%E6%9C%AC%E7%AB%A0%E5%9B%9E%E5%A4%B4%E7%9C%8B%E8%BF%99%E5%BC%A0%E5%9B%BE%E5%B0%B1%E5%A4%9F%EF%BC%89">¶</a></h3><pre><code>原始文本（自然语言）
-  │
-  ├─ [BPE Tokenizer]      → 把字/词/标点变成 token ID 序列
-  │
-  ├─ [滑动窗口采样]        → 切成 N 道"下一个词是什么"的练习题
-  │
-  ├─ [Token Embedding]    → 每个 token ID 查表得到一个"含义向量"
-  │
-  └─ [+ Position Embedding] → 叠加上"位置信息"
-                                ↓
-                          最终输入向量（送入 Transformer）
-</code></pre>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=be67f70a">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=bc46dbf9">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%8A%A0%E8%BD%BD%E6%95%B0%E6%8D%AE">第一步：加载数据<a class="anchor-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%8A%A0%E8%BD%BD%E6%95%B0%E6%8D%AE">¶</a></h3><p>先把原材料准备好。本章用到的文本是短篇小说《The Verdict》大概 2 万个字符，不大不小，刚好练手。</p>
-<p>下面把必要的库装上，下载文本，看一眼前 99 个字符长什么样：</p>
+<p>所以，我们先讨论一句话中，每个token之间的关系如何表示</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4f7b07c9">
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=4a63453b">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h1 id="%E4%B8%8D%E5%90%8Ctoken%E4%B9%8B%E9%97%B4%E5%85%B3%E7%B3%BB%E7%9A%84%E8%A1%A8%E7%A4%BA">不同token之间关系的表示<a class="anchor-link" href="#%E4%B8%8D%E5%90%8Ctoken%E4%B9%8B%E9%97%B4%E5%85%B3%E7%B3%BB%E7%9A%84%E8%A1%A8%E7%A4%BA">¶</a></h1>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=597415d5">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>先导入需要的库，我们先用简单的例子看看</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=5f21e642">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7862,37 +7881,7 @@ a.anchor-link {
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">importlib.metadata</span><span class="w"> </span><span class="kn">import</span> <span class="n">version</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-
 <span class="nb">print</span><span class="p">(</span><span class="s2">"torch version:"</span><span class="p">,</span> <span class="n">version</span><span class="p">(</span><span class="s2">"torch"</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"tiktoken version:"</span><span class="p">,</span> <span class="n">version</span><span class="p">(</span><span class="s2">"tiktoken"</span><span class="p">))</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
-
-<span class="c1"># 兼容两种常见运行方式：</span>
-<span class="c1"># 1. 在项目根目录运行 notebook: data/the-verdict.txt</span>
-<span class="c1"># 2. 在 notebooks/ 目录运行 notebook: ../data/the-verdict.txt</span>
-<span class="n">DATA_PATH</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
-    <span class="p">(</span><span class="n">path</span> <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="p">[</span><span class="n">Path</span><span class="p">(</span><span class="s2">"data/the-verdict.txt"</span><span class="p">),</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"../data/the-verdict.txt"</span><span class="p">),</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"the-verdict.txt"</span><span class="p">)]</span> <span class="k">if</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">()),</span>
-    <span class="n">Path</span><span class="p">(</span><span class="s2">"../data/the-verdict.txt"</span><span class="p">),</span>
-<span class="p">)</span>
-<span class="n">DATA_PATH</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="k">if</span> <span class="ow">not</span> <span class="n">DATA_PATH</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
-    <span class="n">url</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="s2">"https://raw.githubusercontent.com/rasbt/"</span>
-        <span class="s2">"LLMs-from-scratch/main/ch02/01_main-chapter-code/"</span>
-        <span class="s2">"the-verdict.txt"</span>
-    <span class="p">)</span>
-    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-    <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
-    <span class="n">DATA_PATH</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
-
-<span class="c1"># 导入原始文本</span>
-<span class="n">raw_text</span> <span class="o">=</span> <span class="n">DATA_PATH</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"Total number of character:"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw_text</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">raw_text</span><span class="p">[:</span><span class="mi">99</span><span class="p">])</span>
 </pre></div>
 </div>
 </div>
@@ -7905,74 +7894,95 @@ a.anchor-link {
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>torch version: 2.12.0
-tiktoken version: 0.13.0
-Total number of character: 20479
-I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow enough--so it was no 
+<pre>torch version: 2.12.1
 </pre>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e0853060">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=6b6016aa">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>下面开始最核心的一步：<strong>把文本切成 token，然后给每个 token 编个号</strong>。</p>
-<p>为什么需要编号？因为模型只认数字。比如 "Hello world" 这句话，模型需要的不是 H-e-l-l-o 这些字母，而是类似 <code>[3412, 789]</code> 的整数序列。所以我们必须先建一张"单词 → 编号"的对照表，也就是<strong>词表（vocabulary）</strong>。</p>
-<p>先从最简单的切分方式开始——按空格和标点符号来切：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=f77d9496">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [2]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 第一次尝试：只按空格切分</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
-
-<span class="n">text</span> <span class="o">=</span> <span class="s2">"Hello, world. This, is a test."</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'(\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>['Hello,', ' ', 'world.', ' ', 'This,', ' ', 'is', ' ', 'a', ' ', 'test.']
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=08c96eb2">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>从上一章，我们得到了带有位置编码的输入 token 向量。举个例子，假设 embedding 维度为 3，context_length=6：</p>
+<p>输入是一句话 "Your journey starts with one step"，已经走完 Ch02 的 embedding 和位置编码流程，得到了 6 个 token、每个 3 维的向量矩阵。</p>
 <blockquote>
-<p>标点粘在词上了——<code>Hello,</code> 和 <code>world.</code> 被当成了一个整体，逗号句号没单独拆出来。这不行，标点应该独立成 token。</p>
+<p>这里的维度故意设得很小（3 维），是为了每一步都能把完整的矩阵打印出来。真实场景（256~1600 维）数值太多，不太方便看计算过程。</p>
 </blockquote>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=0df60570">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=a11aae20">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [1]:</div>
+<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="cm-editor cm-s-jupyter">
+<div class="highlight hl-ipython3"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span>
+  <span class="p">[[</span><span class="mf">0.43</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">,</span> <span class="mf">0.89</span><span class="p">],</span>   <span class="c1"># Your</span>
+   <span class="p">[</span><span class="mf">0.55</span><span class="p">,</span> <span class="mf">0.87</span><span class="p">,</span> <span class="mf">0.66</span><span class="p">],</span>   <span class="c1"># journey</span>
+   <span class="p">[</span><span class="mf">0.57</span><span class="p">,</span> <span class="mf">0.85</span><span class="p">,</span> <span class="mf">0.64</span><span class="p">],</span>   <span class="c1"># starts</span>
+   <span class="p">[</span><span class="mf">0.22</span><span class="p">,</span> <span class="mf">0.58</span><span class="p">,</span> <span class="mf">0.33</span><span class="p">],</span>   <span class="c1"># with</span>
+   <span class="p">[</span><span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.55</span><span class="p">],</span>   <span class="c1"># one</span>
+   <span class="p">[</span><span class="mf">0.77</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">]]</span>   <span class="c1"># step</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">"输入形状:"</span><span class="p">,</span> <span class="n">inputs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"（6 个 token，每个 3 维）</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"输入矩阵:"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell-outputWrapper">
+<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
+</div>
+<div class="jp-OutputArea jp-Cell-outputArea">
+<div class="jp-OutputArea-child">
+<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>输入形状: torch.Size([6, 3])
+（6 个 token，每个 3 维）
+
+输入矩阵:
+tensor([[0.4300, 0.1500, 0.8900],
+        [0.5500, 0.8700, 0.6600],
+        [0.5700, 0.8500, 0.6400],
+        [0.2200, 0.5800, 0.3300],
+        [0.0500, 0.8000, 0.5500],
+        [0.7700, 0.2500, 0.1000]])
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c6e51948">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>我们如何知道 Your 和 journey 这两个 token 的关系如何呢？</p>
+<p>它们现在都用向量表示，而向量之间的关系可以通过<strong>点积</strong>（dot product）来计算出一个值：</p>
+<p>$$\alpha \cdot \beta = |\alpha||\beta| \cos \theta$$</p>
+<p>直观理解：两个向量方向越一致（夹角越小），点积越大；方向越正交，点积越接近 0。所以我们可以用点积表示两个 token 向量的"相关程度"。</p>
+<blockquote>
+<p>严格来说，点积同时受方向和向量长度影响——很长的向量即使方向不太一致，点积也可能不小。后面会通过归一化手段来缓解这个问题。这里先按"方向相似度"来理解。</p>
+</blockquote>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4d815a5b">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7980,9 +7990,26 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [3]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 第二次尝试：加上逗号和句号作为分隔符</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([,.]|\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 计算Your 与 journey的点积</span>
+<span class="n">Your</span> <span class="o">=</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">journey</span> <span class="o">=</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Your的矩阵表示: "</span><span class="p">,</span> <span class="n">Your</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"journey的矩阵表示: "</span><span class="p">,</span> <span class="n">journey</span><span class="p">)</span>
+
+<span class="c1"># 计算点积：</span>
+<span class="n">Your_journey_dot</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">Your</span><span class="p">,</span> <span class="n">journey</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Your 与 journey的点积结果: "</span><span class="p">,</span> <span class="n">Your_journey_dot</span><span class="p">)</span>
+
+<span class="c1"># 手算验证一下</span>
+<span class="n">hand_result</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+    <span class="n">hand_result</span> <span class="o">=</span> <span class="n">hand_result</span> <span class="o">+</span> <span class="n">Your</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">journey</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">"torch.dot结果 = </span><span class="si">{</span><span class="n">Your_journey_dot</span><span class="si">}</span><span class="s2">,</span><span class="se">\n</span><span class="s2">"</span>
+    <span class="sa">f</span><span class="s2">"手算结果 = </span><span class="si">{</span><span class="n">hand_result</span><span class="si">}</span><span class="s2">,</span><span class="se">\n</span><span class="s2">"</span>
+    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">'与手算结果一致'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">Your_journey_dot</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">hand_result</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'与手算结果不一致'</span><span class="si">}</span><span class="s2">"</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -7995,26 +8022,29 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>['Hello', ',', '', ' ', 'world', '.', '', ' ', 'This', ',', '', ' ', 'is', ' ', 'a', ' ', 'test', '.', '']
+<pre>Your的矩阵表示:  tensor([0.4300, 0.1500, 0.8900])
+journey的矩阵表示:  tensor([0.5500, 0.8700, 0.6600])
+Your 与 journey的点积结果:  tensor(0.9544)
+torch.dot结果 = 0.9544000625610352,
+手算结果 = 0.9544000625610352,
+与手算结果一致
 </pre>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8a091081">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0fe4f0bd">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>标点被拆出来了！但冒出来一堆空字符串 <code>''</code> —— 这是因为逗号后面紧跟着空格，两个分隔符之间什么都没夹，就生成了空串。</p>
-</blockquote>
+<p>既然如此，我们可以这样计算所有token之间的点积</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=56147280">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=1286bc8b">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8022,9 +8052,8 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 第三次尝试：过滤掉空字符串</span>
-<span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">result</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">dot</span> <span class="o">=</span> <span class="n">inputs</span> <span class="o">@</span> <span class="n">inputs</span><span class="o">.</span><span class="n">T</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">dot</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8037,26 +8066,41 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>['Hello', ',', 'world', '.', 'This', ',', 'is', 'a', 'test', '.']
+<pre>tensor([[0.9995, 0.9544, 0.9422, 0.4753, 0.6310, 0.4576],
+        [0.9544, 1.4950, 1.4754, 0.8434, 1.0865, 0.7070],
+        [0.9422, 1.4754, 1.4570, 0.8296, 1.0605, 0.7154],
+        [0.4753, 0.8434, 0.8296, 0.4937, 0.6565, 0.3474],
+        [0.6310, 1.0865, 1.0605, 0.6565, 0.9450, 0.2935],
+        [0.4576, 0.7070, 0.7154, 0.3474, 0.2935, 0.6654]])
 </pre>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0f7152cf">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0b007593">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>干净了！但现在只处理了逗号和句号——还有问号、分号、引号、括号、双破折号等等没管呢。</p>
-</blockquote>
+<p>这样，只需要取Your序号行与 journey序号列，即[0]行[1]列，即可得到这两个token的向量点积结果，我们可以看到dot矩阵的[0]行[1]列内容与我们刚刚手动计算的结果一致。</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4e822001">
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=2b06f788">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>点积结果就是所谓的<strong>注意力得分</strong>（attention scores）。不过这些得分范围很大、不好直观比较，所以我们把它归一化到 0~1 区间，让每行加起来等于 1——这样就变成了一目了然的"关注度比例"。</p>
+<p>最简单的方式：把每个得分除以整行的总和。比如对于 Your（第 0 行），把它跟所有 token 的点积得分分别除以这一行的总分：</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=96ee0437">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8064,11 +8108,12 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 第四次尝试：补全所有常见标点，这就是最终版的正则了</span>
-<span class="n">text</span> <span class="o">=</span> <span class="s2">"Hello, world. Is this-- a test?"</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([,.:;?_!"()</span><span class="se">\'</span><span class="s1">]|--|\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-<span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">result</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># dot[0] = Your 与其他所有 token 的点积结果（6 个值）</span>
+<span class="c1"># 除以它们的总和 → 归一化，让结果加起来等于 1</span>
+<span class="n">norm_avg</span> <span class="o">=</span> <span class="n">dot</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dot</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Your 对各 token 的归一化关注度:"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">norm_avg</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"验证：加起来 = </span><span class="si">{</span><span class="n">norm_avg</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8081,13 +8126,31 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>['Hello', ',', 'world', '.', 'Is', 'this', '--', 'a', 'test', '?']
+<pre>Your 对各 token 的归一化关注度:
+tensor([0.2241, 0.2140, 0.2113, 0.1066, 0.1415, 0.1026])
+验证：加起来 = 1.0000
 </pre>
 </div>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=e2fdc500">
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=71f52deb">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<p>直接除总和虽然简单，但实际项目中都用 <strong>softmax</strong>。原因有两个：</p>
+<ol>
+<li><strong>放大差异</strong>：softmax 的指数运算（<code>exp</code>）会让原本接近的值被拉得更开，模型更容易"聚焦"到真正相关的 token，而不是一碗水端平。</li>
+<li><strong>梯度友好</strong>：softmax 处处可导，配合交叉熵损失函数时梯度计算特别简洁，训练稳定。</li>
+</ol>
+<p>下面先手写一个 naive 版 softmax 感受一下原理，再换成 PyTorch 的优化版。</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=c9fb2108">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8095,75 +8158,17 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 使用正则表达式将文本分割为单词</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
-
-<span class="n">text</span> <span class="o">=</span> <span class="n">raw_text</span>
-<span class="c1"># 正则解释：按以下规则切分——</span>
-<span class="c1">#   [,.:;?_!"()\']  → 标点符号单独切开</span>
-<span class="c1">#   --              → 双破折号单独切开</span>
-<span class="c1">#   \s              → 空格/换行作为分隔</span>
-<span class="c1"># 括号把分隔符也保留下来（否则会被丢掉）</span>
-<span class="n">result</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([,.:;?_!"()</span><span class="se">\'</span><span class="s1">]|--|\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-<span class="n">result</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">result</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">[:</span><span class="mi">10</span><span class="p">])</span>
-<span class="c1"># 得到result为含有单词和标点的列表，接下来就可以根据这些单词和标点，生成一份简单的词表了，包含所有单词、标点</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"文本所含标点与单词总数："</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">))</span>
-
-<span class="c1"># 去重、排序</span>
-<span class="n">all_words</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">result</span><span class="p">))</span>
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_words</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"去重后所含单词和标点的数目："</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">)</span>
-<span class="c1"># 将单词对应序号</span>
-<span class="n">vocab</span> <span class="o">=</span> <span class="p">{</span><span class="n">token</span><span class="p">:</span><span class="n">integer</span> <span class="k">for</span> <span class="n">integer</span><span class="p">,</span><span class="n">token</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">all_words</span><span class="p">)}</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">vocab</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">:</span>
-        <span class="k">break</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># softmax 简单实现 —— 仅用于理解原理</span>
+<span class="c1"># 注意：这个版本只支持 1D 张量（比如 dot[0] 这种一行数据）</span>
+<span class="c1"># PyTorch 的 torch.softmax 支持任意维度，后面会用它</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">softmax_naive</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># dim=0 对 1D 张量没问题</span>
 </pre></div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>['I', 'HAD', 'always', 'thought', 'Jack', 'Gisburn', 'rather', 'a', 'cheap', 'genius']
-文本所含标点与单词总数： 4690
-去重后所含单词和标点的数目： 1130
-('!', 0)
-('"', 1)
-("'", 2)
-('(', 3)
-(')', 4)
-(',', 5)
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=416ad36c">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>这样，词表就有了——1130 个不重复的 token，每个都分配了一个整数 ID。</p>
-<p>有了词表，就可以做两件事：</p>
-<ul>
-<li><strong>encode</strong>：文本 → token ID 序列（喂给模型）</li>
-<li><strong>decode</strong>：token ID 序列 → 文本（把模型输出翻译回人话）</li>
-</ul>
-<p>我们把这两个操作封装成一个类，方便复用：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=572e543c">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=9c877a69">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8171,36 +8176,8 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">SimpleTokenizerV1</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
-        <span class="c1"># 输入是一个字典, 就是我们上文中生成过的 {token: token_id} 的字典</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">str_to_int</span> <span class="o">=</span> <span class="n">vocab</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">int_to_str</span> <span class="o">=</span> <span class="p">{</span><span class="n">i</span><span class="p">:</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">vocab</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-    
-    <span class="c1"># 所谓的encoder就是将字符串转为token_id的过程</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
-        <span class="n">preprocessed</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([,.:;?_!"()</span><span class="se">\'</span><span class="s1">]|--|\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-                                
-        <span class="n">preprocessed</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">preprocessed</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-        <span class="p">]</span>
-        <span class="n">ids</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">str_to_int</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">preprocessed</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">ids</span>
-    
-    <span class="c1"># decoder就是将token_id 转文本</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">decode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">int_to_str</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">])</span>
-        <span class="c1"># Replace spaces before the specified punctuations</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'\s+([,.?!"()</span><span class="se">\'</span><span class="s1">])'</span><span class="p">,</span> <span class="sa">r</span><span class="s1">'\1'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">text</span>
-    
-<span class="c1"># 示例用法（实例化方式）：</span>
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">SimpleTokenizerV1</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span>
-<span class="n">text</span> <span class="o">=</span> <span class="s2">""""It's the last he painted, you know," </span>
-<span class="s2">           Mrs. Gisburn said with pardonable pride."""</span>
-<span class="n">ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">norm_softmax</span> <span class="o">=</span> <span class="n">softmax_naive</span><span class="p">(</span><span class="n">dot</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">norm_softmax</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8213,54 +8190,13 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>[1, 56, 2, 850, 988, 602, 533, 746, 5, 1126, 596, 5, 1, 67, 7, 38, 851, 1108, 754, 793, 7]
+<pre>tensor([0.2098, 0.2006, 0.1981, 0.1242, 0.1452, 0.1220])
 </pre>
 </div>
 </div>
-<div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[7]:</div>
-<div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
-<pre>'" It\' s the last he painted, you know," Mrs. Gisburn said with pardonable pride.'</pre>
 </div>
 </div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=04a01b07">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>注意：这个简陋 tokenizer 已经能工作，但它会把 It's 拆得很怪。这正是我们后面需要 BPE 的原因之一。</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=9276ad32">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>我们现在写的分词器能将单词转为 token ID——前提是这个词在词表里。V1 的词表只覆盖了《The Verdict》这本小说里出现的 1130 个词，换一段新文本，大概率会碰到生词。怎么办？</p>
-</blockquote>
-<p>最简单的思路：<strong>不认识就老实说"不认识"</strong>。在词表里塞几个"占位符"（特殊 token），让分词器碰到生词时用它代替，而不是直接报错。</p>
-<p>常见的特殊 token 有：</p>
-<ul>
-<li><code>&lt;|unk|&gt;</code>：未知词（unknown），替换词表里没有的词</li>
-<li><code>&lt;|endoftext|&gt;</code>：文本结束标记，用来分隔两篇来源不同的文章（比如训练数据里有 Wikipedia + 小说，中间就用它隔开）；GPT-2 还顺手拿它做 padding</li>
-<li><code>[BOS]</code> / <code>[EOS]</code> / <code>[PAD]</code>：有些模型还会加"句首""句尾""填充"标记</li>
-</ul>
-<blockquote>
-<p>⚠️ GPT-2 实际上<strong>只用 <code>&lt;|endoftext|&gt;</code> 一个特殊 token</strong>——它不需要 <code>&lt;|unk|&gt;</code>（因为 BPE 能把生词拆成已知子词，第二阶段会讲），也不单独区分 BOS/EOS/PAD，全部复用 <code>&lt;|endoftext|&gt;</code>。这里是教学路线，我们先从"加占位符"的方案走一遍，理解动机后再看 GPT-2 的最终方案。</p>
-</blockquote>
-<p>下面先用 V1 分词器试试，看它碰到生词会怎样：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell celltag_raises-exception" id="cell-id=a971fb77">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=38a177e3">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8268,11 +8204,13 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">tokenizer</span> <span class="o">=</span> <span class="n">SimpleTokenizerV1</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span>
-
-<span class="n">text</span> <span class="o">=</span> <span class="s2">"Hello, do you like tea. Is this-- a test?"</span>
-
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># torch.softmax 对 2D 矩阵按行归一化</span>
+<span class="c1"># dim=1 表示沿着列方向做 softmax —— 每一行独立计算，行内所有值加起来等于 1</span>
+<span class="c1"># dot 的形状是 [6, 6]，6 个 token 各自对 6 个 token 的关注</span>
+<span class="n">attn_score</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dot</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"softmax 归一化后的注意力权重（每行加起来 = 1）："</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">attn_score</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">验证每行和: </span><span class="si">{</span><span class="n">attn_score</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8284,42 +8222,22 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>
-<span class="ansi-red-fg">---------------------------------------------------------------------------</span>
-<span class="ansi-red-fg">KeyError</span>                                  Traceback (most recent call last)
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[8]</span><span class="ansi-green-fg">, line 5</span>
-<span class="ansi-green-fg">      1</span> tokenizer = SimpleTokenizerV1(vocab)
-<span class="ansi-green-fg">      2</span> 
-<span class="ansi-green-fg">      3</span> text = <span class="ansi-yellow-fg">"Hello, do you like tea. Is this-- a test?"</span>
-<span class="ansi-green-fg">      4</span> 
-<span class="ansi-green-fg">----&gt; </span><span class="ansi-green-fg">5</span> tokenizer.encode(text)
+<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
+<pre>softmax 归一化后的注意力权重（每行加起来 = 1）：
+tensor([[0.2098, 0.2006, 0.1981, 0.1242, 0.1452, 0.1220],
+        [0.1385, 0.2379, 0.2333, 0.1240, 0.1581, 0.1082],
+        [0.1390, 0.2369, 0.2326, 0.1242, 0.1565, 0.1108],
+        [0.1435, 0.2074, 0.2046, 0.1462, 0.1720, 0.1263],
+        [0.1385, 0.2184, 0.2128, 0.1420, 0.1896, 0.0988],
+        [0.1526, 0.1958, 0.1975, 0.1367, 0.1295, 0.1879]])
 
-<span class="ansi-cyan-fg">Cell</span><span class="ansi-cyan-fg"> </span><span class="ansi-green-fg">In[7]</span><span class="ansi-green-fg">, line 14</span>, in <span class="ansi-cyan-fg">SimpleTokenizerV1.encode</span><span class="ansi-blue-fg">(self, text)</span>
-<span class="ansi-green-fg">     10</span> 
-<span class="ansi-green-fg">     11</span>         preprocessed = [
-<span class="ansi-green-fg">     12</span>             item.strip() <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> item <span class="ansi-bold" style="color: rgb(0,135,0)">in</span> preprocessed <span class="ansi-bold" style="color: rgb(0,135,0)">if</span> item.strip()
-<span class="ansi-green-fg">     13</span>         ]
-<span class="ansi-green-fg">---&gt; </span><span class="ansi-green-fg">14</span>         ids = [self.str_to_int[s] <span class="ansi-bold" style="color: rgb(0,135,0)">for</span> s <span class="ansi-bold" style="color: rgb(0,135,0)">in</span> preprocessed]
-<span class="ansi-green-fg">     15</span>         <span class="ansi-bold" style="color: rgb(0,135,0)">return</span> ids
-
-<span class="ansi-red-fg">KeyError</span>: 'Hello'</pre>
+验证每行和: [0.9999998807907104, 1.0, 1.0000001192092896, 1.0, 1.0, 0.9999999403953552]
+</pre>
 </div>
 </div>
 </div>
 </div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=42d34932">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>可以看到，词典里没有 "Hello" 这个词，也没有 <code>&lt;|unk|&gt;</code> 这个占位符，所以 V1 直接报 KeyError 了。先把 <code>&lt;|endoftext|&gt;</code> 和 <code>&lt;|unk|&gt;</code> 插入词典：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=7de8a8fe">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=0df48a1f">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8327,14 +8245,8 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">all_tokens</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">result</span><span class="p">)))</span>
-<span class="n">all_tokens</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="s2">"&lt;|endoftext|&gt;"</span><span class="p">,</span> <span class="s2">"&lt;|unk|&gt;"</span><span class="p">])</span>
-
-<span class="n">vocab</span> <span class="o">=</span> <span class="p">{</span><span class="n">token</span><span class="p">:</span><span class="n">integer</span> <span class="k">for</span> <span class="n">integer</span><span class="p">,</span><span class="n">token</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">all_tokens</span><span class="p">)}</span>
-<span class="nb">len</span><span class="p">(</span><span class="n">vocab</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
-<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">vocab</span><span class="o">.</span><span class="n">items</span><span class="p">())[</span><span class="o">-</span><span class="mi">5</span><span class="p">:]):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-<span class="c1"># 成功将两个标记插入到词典</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="n">attn_score</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">dot</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># dim=1：按行归一化，本身dot矩阵的维度是[batch, 行, 列]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">attn_score</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8347,28 +8259,35 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>('younger', 1127)
-('your', 1128)
-('yourself', 1129)
-('&lt;|endoftext|&gt;', 1130)
-('&lt;|unk|&gt;', 1131)
+<pre>tensor([[0.2098, 0.2006, 0.1981, 0.1242, 0.1452, 0.1220],
+        [0.1385, 0.2379, 0.2333, 0.1240, 0.1581, 0.1082],
+        [0.1390, 0.2369, 0.2326, 0.1242, 0.1565, 0.1108],
+        [0.1435, 0.2074, 0.2046, 0.1462, 0.1720, 0.1263],
+        [0.1385, 0.2184, 0.2128, 0.1420, 0.1896, 0.0988],
+        [0.1526, 0.1958, 0.1975, 0.1367, 0.1295, 0.1879]])
 </pre>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=b0f95194">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=07669f0d">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>但我们刚刚写的Tokenizer还不能处理这些特殊的符号（它不知道这些符号是干什么的，需要我们告诉它怎么处理），接下来写新版的Tokenizer：</p>
+<h2 id="%E6%9C%89%E4%BA%86%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9D%83%E9%87%8D%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%B0%B1%E6%98%AF%E6%8C%89%E6%9D%83%E9%87%8D%E6%8A%8A%E6%89%80%E6%9C%89-token-%E7%9A%84%E4%BF%A1%E6%81%AF%E6%B1%87%E6%80%BB">有了注意力权重，下一步就是<strong>按权重把所有 token 的信息汇总</strong><a class="anchor-link" href="#%E6%9C%89%E4%BA%86%E6%B3%A8%E6%84%8F%E5%8A%9B%E6%9D%83%E9%87%8D%EF%BC%8C%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%B0%B1%E6%98%AF%E6%8C%89%E6%9D%83%E9%87%8D%E6%8A%8A%E6%89%80%E6%9C%89-token-%E7%9A%84%E4%BF%A1%E6%81%AF%E6%B1%87%E6%80%BB">¶</a></h2><p>——对每个 token，用它对其他 token 的注意力权重，对原始向量做加权求和，得到"带上下文的新表示"。</p>
+<div class="highlight"><pre><span></span>token 0 的新向量 = attn[0][0] × inputs[0]
+                 + attn[0][1] × inputs[1]
+                 + attn[0][2] × inputs[2]
+                 + ...
+</pre></div>
+<p>矩阵形式就是一句话：</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=1436ef7b">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=67922cb3">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8376,36 +8295,21 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-InputPrompt jp-InputArea-prompt">In [10]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">SimpleTokenizerV2</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">str_to_int</span> <span class="o">=</span> <span class="n">vocab</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">int_to_str</span> <span class="o">=</span> <span class="p">{</span> <span class="n">i</span><span class="p">:</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span><span class="n">i</span> <span class="ow">in</span> <span class="n">vocab</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
-    
-    <span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
-        <span class="n">preprocessed</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([,.:;?_!"()</span><span class="se">\'</span><span class="s1">]|--|\s)'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-        <span class="n">preprocessed</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">preprocessed</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
-        <span class="n">preprocessed</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">item</span> <span class="k">if</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">str_to_int</span> 
-            <span class="k">else</span> <span class="s2">"&lt;|unk|&gt;"</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">preprocessed</span>  <span class="c1"># 让tokenizer将不认识的单词都标记为&lt;|unk|&gt;</span>
-        <span class="p">]</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 加权求和：注意力权重 @ 原始向量 → 带上下文的 token 表示</span>
+<span class="c1"># attn_score: [6, 6] —— 每行是 token i 对 6 个 token 的注意力权重</span>
+<span class="c1"># inputs:     [6, 3] —— 6 个 token，每个 3 维</span>
+<span class="c1"># context:    [6, 3] —— 每个 token 得到了融合全句信息后的新向量</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">attn_score</span> <span class="o">@</span> <span class="n">inputs</span>
 
-        <span class="n">ids</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">str_to_int</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">preprocessed</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">ids</span>
-        
-    <span class="k">def</span><span class="w"> </span><span class="nf">decode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">):</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">int_to_str</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">])</span>
-        <span class="c1"># Replace spaces before the specified punctuations</span>
-        <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'\s+([,.:;?!"()</span><span class="se">\'</span><span class="s1">])'</span><span class="p">,</span> <span class="sa">r</span><span class="s1">'\1'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">text</span>
-    
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">SimpleTokenizerV2</span><span class="p">(</span><span class="n">vocab</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"=== 加权求和：每个 token 的新向量 ==="</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"形状: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> （和原始 inputs 形状完全一样）</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">context</span><span class="p">)):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"token </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> 的新向量: </span><span class="si">{</span><span class="n">context</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
-<span class="n">text1</span> <span class="o">=</span> <span class="s2">"Hello, do you like tea?"</span>
-<span class="n">text2</span> <span class="o">=</span> <span class="s2">"In the sunlit terraces of the palace."</span>
-
-<span class="n">text</span> <span class="o">=</span> <span class="s2">" &lt;|endoftext|&gt; "</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="n">text1</span><span class="p">,</span> <span class="n">text2</span><span class="p">))</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">对比："</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  inputs[0]（原始）: </span><span class="si">{</span><span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  context[0]（融合后）: </span><span class="si">{</span><span class="n">context</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"  → 向量变了！它不再是 'Your' 独自的信息，而是融合了全句所有 token 的信息"</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -8418,1309 +8322,41 @@ I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow en
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Hello, do you like tea? &lt;|endoftext|&gt; In the sunlit terraces of the palace.
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=3a23754e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [11]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 试试encode是否正常</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[11]:</div>
-<div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
-<pre>[1131, 5, 355, 1126, 628, 975, 10, 1130, 55, 988, 956, 984, 722, 988, 1131, 7]</pre>
-</div>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=d84e3b15">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [12]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 再试试将encode后的tokenid列表再decode</span>
-<span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child jp-OutputArea-executeResult">
-<div class="jp-OutputPrompt jp-OutputArea-prompt">Out[12]:</div>
-<div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type="text/plain" tabindex="0">
-<pre>'&lt;|unk|&gt;, do you like tea? &lt;|endoftext|&gt; In the sunlit terraces of the &lt;|unk|&gt;.'</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=104481c3">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>可以看到，不认识的单词都被标记成了<code>&lt;|unk|&gt;</code>，至此，Tokenizer已经可以处理任何文本了（只是可能出现一些不认识的单词）</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=fe2ee017">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>那还有什么问题呢？还需要优化哪些地方？</p>
-<p>当然有问题，而且不小：</p>
-<ol>
-<li><strong>不认识的词都标记成 <code>&lt;|unk|&gt;</code></strong>——模型的知识盲区会很大。一段正常文本里如果有好几个 <code>&lt;|unk|&gt;</code>，模型等于在"盲猜"，生成质量可想而知。</li>
-<li><strong>词表会无限膨胀</strong>——世界上的语言、人名、新造词无穷无尽，靠"完整单词进词表"这条路，词表只会越来越大，而且永远追不上新词出现的速度。</li>
-</ol>
-<p>下面来实际感受一下，用一段含生词的文本跑 V2：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=5674ba4c">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 模拟一段包含生僻词的文本——比如医学、科幻、或者纯粹瞎编的词</span>
-<span class="n">text_with_rare_words</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="s2">"The doctor diagnosed pneumonoultramicroscopicsilicovolcanoconiosis. "</span>
-    <span class="s2">"Meanwhile, the cyborgs from Zeta-Reticuli were deploying their"</span>
-    <span class="s2">"quasifibrillators near the heliopause. "</span>
-    <span class="s2">"Jasper's selfbuilt tokenizer definitely cannot handle this."</span>
-<span class="p">)</span>
+<pre>=== 加权求和：每个 token 的新向量 ===
+形状: torch.Size([6, 3]) （和原始 inputs 形状完全一样）
 
-<span class="n">ids_v2</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text_with_rare_words</span><span class="p">)</span>
-<span class="n">decoded_v2</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">ids_v2</span><span class="p">)</span>
+token 0 的新向量: [0.44205939769744873, 0.593098521232605, 0.5789890885353088]
+token 1 的新向量: [0.4418657422065735, 0.6514819860458374, 0.5683088898658752]
+token 2 的新向量: [0.4431275427341461, 0.6495946049690247, 0.5670731067657471]
+token 3 的新向量: [0.43038973212242126, 0.6298280954360962, 0.5510269999504089]
+token 4 的新向量: [0.41772449016571045, 0.6503232717514038, 0.5645352602005005]
+token 5 的新向量: [0.46710169315338135, 0.5909926891326904, 0.5265965461730957]
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">"原文："</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">text_with_rare_words</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">V2 encode → decode 结果："</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">decoded_v2</span><span class="p">)</span>
-
-<span class="c1"># 统计一下 &lt;|unk|&gt; 的数量</span>
-<span class="n">unk_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">ids_v2</span> <span class="k">if</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">int_to_str</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"&lt;|unk|&gt;"</span><span class="p">)</span>
-<span class="n">total_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids_v2</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">总共 </span><span class="si">{</span><span class="n">total_count</span><span class="si">}</span><span class="s2"> 个 token，其中 &lt;|unk|&gt; 占了 </span><span class="si">{</span><span class="n">unk_count</span><span class="si">}</span><span class="s2"> 个 (</span><span class="si">{</span><span class="n">unk_count</span><span class="o">/</span><span class="n">total_count</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e20c4b32">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>一句话里一半都是 <code>&lt;|unk|&gt;</code>，模型基本在盲猜。这就是"完整单词进词表"的死穴——换一个领域、换一种语言，词表就得跟着膨胀，永远追不上。</p>
-</blockquote>
-<p>怎么解决？核心思路：<strong>不要把"完整单词"当作最小单位。把生词拆成更小的已知片段，让模型用这些片段去拼。</strong> 比如 <code>selfbuilt</code> 拆成 <code>self</code> + <code>built</code>，<code>quasifibrillators</code> 拆成 <code>quasi</code> + <code>fibr</code> + <code>ill</code> + <code>ators</code>。</p>
-<p>这就是 BPE（Byte Pair Encoding，字节对编码）做的事。下面来正式认识它。</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=533b693e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>BPE 不一定把一个英文单词当成一个 token。它可以把生词拆成更小的已知片段，所以不需要把每个完整单词都放进词表。</p>
-</blockquote>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=75013a9a">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [13]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 注意：前面写 V1、V2 是为了理解分词器的原理。</span>
-<span class="c1"># 实际项目中不会自己从零写——直接用成熟的 BPE 分词器即可。</span>
-<span class="c1"># 下面 tokenizer 使用 GPT-2 的 BPE 分词器。</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span> 
-<span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span> <span class="c1"># OpenAI 开源的 BPE 分词器，Rust 实现，速度约为纯 Python 的 5 倍</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"tiktoken version:"</span><span class="p">,</span> <span class="n">importlib</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">version</span><span class="p">(</span><span class="s2">"tiktoken"</span><span class="p">))</span>
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">"gpt2"</span><span class="p">)</span>  <span class="c1"># ← 从这里开始，tokenizer 是 BPE 分词器了</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>tiktoken version: 0.13.0
+对比：
+  inputs[0]（原始）: [0.4300000071525574, 0.15000000596046448, 0.8899999856948853]
+  context[0]（融合后）: [0.44205939769744873, 0.593098521232605, 0.5789890885353088]
+  → 向量变了！它不再是 'Your' 独自的信息，而是融合了全句所有 token 的信息
 </pre>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=2f00433d">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=09fddccc">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>试试它的效果</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=05babd39">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [14]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">text</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="s2">"Hello, do you like tea? &lt;|endoftext|&gt; In the sunlit terraces"</span>
-     <span class="s2">"of someunknownPlace."</span>
-<span class="p">)</span>
-
-<span class="c1"># BPE 分词器默认会把 &lt;|endoftext|&gt; 当作普通文本处理（拆成 &lt;、|、end 等子词）。</span>
-<span class="c1"># 加上 allowed_special 告诉它："这是个特殊 token，请保留整体，不要拆开"。</span>
-<span class="n">integers</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="p">{</span><span class="s2">"&lt;|endoftext|&gt;"</span><span class="p">})</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="n">integers</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>[15496, 11, 466, 345, 588, 8887, 30, 220, 50256, 554, 262, 4252, 18250, 8812, 2114, 1659, 617, 34680, 27271, 13]
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=dc1883a3">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [15]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">strs</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">integers</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">strs</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Hello, do you like tea? &lt;|endoftext|&gt; In the sunlit terracesof someunknownPlace.
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=13c217e2">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="BPE-%E6%98%AF%E6%80%8E%E4%B9%88%E5%81%9A%E5%88%B0%E7%9A%84%EF%BC%9F%E2%80%94%E2%80%94-%E7%9B%B4%E8%A7%82%E6%84%9F%E5%8F%97">BPE 是怎么做到的？—— 直观感受<a class="anchor-link" href="#BPE-%E6%98%AF%E6%80%8E%E4%B9%88%E5%81%9A%E5%88%B0%E7%9A%84%EF%BC%9F%E2%80%94%E2%80%94-%E7%9B%B4%E8%A7%82%E6%84%9F%E5%8F%97">¶</a></h3><p>先用刚才让 V2 抓瞎的那段生僻词文本，看看 BPE 的表现：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=1c26a529">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 用 BPE tokenizer 处理同样的生僻词文本</span>
-<span class="n">bpe_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text_with_rare_words</span><span class="p">)</span>
-<span class="n">bpe_decoded</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">bpe_ids</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"原文："</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">text_with_rare_words</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">BPE encode → decode 结果："</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">bpe_decoded</span><span class="p">)</span>
-
-<span class="c1"># 逐个展示 BPE 是怎么拆词的</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">每个 token 的对应关系："</span><span class="p">)</span>
-<span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">bpe_ids</span><span class="p">:</span>
-    <span class="n">token_str</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">([</span><span class="n">tid</span><span class="p">])</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">tid</span><span class="si">:</span><span class="s2">&gt;6</span><span class="si">}</span><span class="s2"> → '</span><span class="si">{</span><span class="n">token_str</span><span class="si">}</span><span class="s2">'"</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8b703615">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>看到了吗？<code>pneumonoultramicroscopicsilicovolcanoconiosis</code> 这种超长医学词，BPE 把它拆成了 <code>p</code> <code>neu</code> <code>mon</code> <code>oul</code> <code>tra</code> <code>micro</code> <code>scop</code> <code>ic</code> <code>sil</code> <code>ico</code> <code>vol</code> <code>cano</code> <code>con</code> <code>iosis</code> 等一连串小片段。<code>quasifibrillators</code> 也被拆成了 <code>quasi</code> <code>fib</code> <code>rill</code> <code>ators</code>。</p>
-<p>没有一个 <code>&lt;|unk|&gt;</code>！因为 BPE 不要求认识完整的词——它只需要认识组成这些词的"零件"。就好像你不认识"三碘甲状腺原氨酸"这个化学名词，但你认识"三""碘""甲状腺""原氨酸"，就能读出来。</p>
-</blockquote>
-<h3 id="BPE-%E7%9A%84%E6%A0%B8%E5%BF%83%E5%8E%9F%E7%90%86">BPE 的核心原理<a class="anchor-link" href="#BPE-%E7%9A%84%E6%A0%B8%E5%BF%83%E5%8E%9F%E7%90%86">¶</a></h3><p>BPE 的思路简单得出奇——<strong>"哪两个 token 老是一起出现，就把它们合并成一个"</strong>。算法步骤：</p>
-<ol>
-<li><strong>从字符级开始</strong>：初始词表只包含每个独立的字符（包括空格、标点、Unicode 字符等）</li>
-<li><strong>统计所有相邻 token 对的出现频率</strong></li>
-<li><strong>把出现次数最多的一对合并成新的 token</strong>，加入词表</li>
-<li><strong>重复 2-3</strong>，直到词表达到指定大小（GPT-2 是 50,257 个）</li>
-</ol>
-<p>举个例子。假设训练文本只有这一句话：<code>"low low low low lower"</code>：</p>
-<pre><code>初始: l o w _ l o w _ l o w _ l o w _ l o w e r   （_ 代表空格）
-高频对: "l"+"o" → "lo"
-合并: lo w _ lo w _ lo w _ lo w _ lo w e r
-高频对: "lo"+"w" → "low"
-合并: low _ low _ low _ low _ low e r
-高频对: "low"+"_" → "low_"
-合并: low_ low_ low_ low_ low e r
-高频对: "low_"+"low_" → 出现频率还不够高，换 "e"+"r" → "er"
-合并: low_ low_ low_ low_ low er
-...
-</code></pre>
-<blockquote>
-<p>真正的 BPE 在更大的文本上跑几万次合并，最终的词表里既有单个字符（<code>a</code>, <code>b</code>, <code>!</code>, <code>?</code>），也有常见子词（<code>ing</code>, <code>tion</code>, <code>the</code>, <code>self</code>），还有高频完整词（<code>the</code>, <code>and</code>, <code>a</code>）。遇到生词就往下拆，拆到词表里有的子词为止。</p>
-</blockquote>
-<h3 id="GPT-2-%E7%9A%84-BPE-%E7%BB%86%E8%8A%82">GPT-2 的 BPE 细节<a class="anchor-link" href="#GPT-2-%E7%9A%84-BPE-%E7%BB%86%E8%8A%82">¶</a></h3><p>GPT-2 用的是<strong>字节级 BPE</strong>（Byte-level BPE），比刚才例子多两个关键设计：</p>
-<ul>
-<li><strong>以字节为单位</strong>，不是以 Unicode 字符为单位——所以它理论上能编码任何语言、任何符号，甚至 emoji。词表大小 50,257。</li>
-<li><strong>只有一个特殊 token</strong>：<code>&lt;|endoftext|&gt;</code>（ID = 50256）。不需要 <code>&lt;|unk|&gt;</code>（因为 BPE 不会遇到真正的"未知字符"），也不单独区分 BOS/EOS/PAD——全部复用 <code>&lt;|endoftext|&gt;</code>。</li>
-</ul>
-<p>总结一句话：<strong>V1/V2 是"背词典"，BPE 是"学词根"</strong>。背词典遇到生词就傻眼，学词根可以拼出任何词。这就是为什么所有主流 LLM 都在用 BPE 或它的变体。</p>
-<blockquote>
-<p>在第 5 章我们会从零实现一个 BPE tokenizer，把上面的合并循环写成代码。现在先用 tiktoken 现成的，把注意力放在"处理完 token 之后做什么"。</p>
-</blockquote>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=a1387235">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9A%E4%BB%8E-token-%E5%BA%8F%E5%88%97%E5%88%B0%E8%AE%AD%E7%BB%83%E6%A0%B7%E6%9C%AC%E2%80%94%E2%80%94%22%E6%A0%B9%E6%8D%AE%E4%B8%8A%E6%96%87%E9%A2%84%E6%B5%8B%E4%B8%8B%E4%B8%80%E4%B8%AA%E8%AF%8D%22">第三步：从 token 序列到训练样本——"根据上文预测下一个词"<a class="anchor-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9A%E4%BB%8E-token-%E5%BA%8F%E5%88%97%E5%88%B0%E8%AE%AD%E7%BB%83%E6%A0%B7%E6%9C%AC%E2%80%94%E2%80%94%22%E6%A0%B9%E6%8D%AE%E4%B8%8A%E6%96%87%E9%A2%84%E6%B5%8B%E4%B8%8B%E4%B8%80%E4%B8%AA%E8%AF%8D%22">¶</a></h2><p>好，现在我们有办法把任意文本变成一串 token ID 了。那模型拿到这串 ID 之后，到底要做什么？</p>
-<p>答案出奇的简单——<strong>猜下一个 token</strong>。</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=c4ee7f2c">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<pre><code>把 LLM 的训练过程想象成"填字游戏"：
-
-输入（已知上文）          模型要预测的（下一个 token）
-─────────────────────    ────────────────────────────
-[LLMs]               →   learn      ← 看到 "LLMs"，猜 "learn"
-[LLMs, learn]        →   to         ← 看到 "LLMs learn"，猜 "to"
-[LLMs, learn, to]    →   predict    ← 看到 "LLMs learn to"，猜 "predict"
-[LLMs, learn, to, predict] → next  ← ...
-...
-
-这就是大模型唯一在做的事：给定一串 token，猜接下来最可能是哪个 token。
-训练时，正确答案（真实文本的下一个 token）是已知的——模型不断调整内部参数，
-让自己猜的越来越准。
-</code></pre>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8792bd68">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>上图的每一对 <code>(上文, 下一个)</code> 就是一条训练样本。构造方法很简单：<strong>把真实文本右移一位，作为"标准答案"</strong>。模型看左边的 token 序列，输出对下一个 token 的预测，然后跟右边的"标准答案"对比，算出差多少（loss），反向传播修正参数。</p>
-<p>下面动手把《The Verdict》变成这样的训练样本。</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=aa0ec7ab">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [16]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># the-verdict.txt 文件内就是一段文章，我们可以用Tokenizer，生成一系列的tokenId</span>
-<span class="n">raw_text</span> <span class="o">=</span> <span class="n">DATA_PATH</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
-
-<span class="n">enc_text</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">raw_text</span><span class="p">)</span> <span class="c1"># 将原文转为一个tokenId的序列</span>
-<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">enc_text</span><span class="p">))</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>5145
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=705a06e3">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>举个例子，说明一下训练的数据长什么样：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=de9c9b88">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [17]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 取出一段</span>
-<span class="n">enc_sample</span> <span class="o">=</span> <span class="n">enc_text</span><span class="p">[</span><span class="mi">50</span><span class="p">:]</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">enc_sample</span><span class="p">[:</span><span class="mi">10</span><span class="p">])</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>[290, 4920, 2241, 287, 257, 4489, 64, 319, 262, 34686]
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8495a0c5">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [18]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">context_size</span> <span class="o">=</span> <span class="mi">4</span> <span class="c1"># 设置每个窗口最大为4</span>
-
-<span class="n">x</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[:</span><span class="n">context_size</span><span class="p">]</span>
-<span class="n">y</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="n">context_size</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"假设x我们给大模型的输入，我们要想让大模型能预测下一个词，那输出就是x向右移一位，即y："</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"x: </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"y:      </span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>假设x我们给大模型的输入，我们要想让大模型能预测下一个词，那输出就是x向右移一位，即y：
-x: [290, 4920, 2241, 287]
-y:      [4920, 2241, 287, 257]
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=03c73c42">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>预测过程就像是这样：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=eb38e522">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [19]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">context_size</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[:</span><span class="n">i</span><span class="p">]</span>
-    <span class="n">desired</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="n">context</span><span class="p">,</span> <span class="s2">"----&gt;"</span><span class="p">,</span> <span class="n">desired</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>[290] ----&gt; 4920
-[290, 4920] ----&gt; 2241
-[290, 4920, 2241] ----&gt; 287
-[290, 4920, 2241, 287] ----&gt; 257
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=53683d28">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>用文本表示，过程也就是这样：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=68f41b2d">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [20]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">context_size</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
-    <span class="n">context</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[:</span><span class="n">i</span><span class="p">]</span>
-    <span class="n">desired</span> <span class="o">=</span> <span class="n">enc_sample</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">context</span><span class="p">),</span> <span class="s2">"----&gt;"</span><span class="p">,</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">([</span><span class="n">desired</span><span class="p">]))</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre> and ----&gt;  established
- and established ----&gt;  himself
- and established himself ----&gt;  in
- and established himself in ----&gt;  a
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=ae4b9ba3">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>下面我们做一个简单的数据加载器，把原始数据转变为可供于训练的格式（input &amp; target）</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=5f187e60">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [21]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 先导入torch库</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"PyTorch version:"</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>PyTorch version: 2.12.0+cpu
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=b1f1b2e4">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>在动手之前，先认识一下 PyTorch 里的两个"搬运工"：</p>
-</blockquote>
-<ul>
-<li><strong>Dataset</strong>：你可以把它理解成"数据仓库"。我们要做的 <code>GPTDatasetV1</code> 继承它，重写 <code>__len__</code>（告诉别人仓库里有多少条数据）和 <code>__getitem__</code>（按索引取出一条数据）。它只管"单条存取"，不管怎么打包。</li>
-<li><strong>DataLoader</strong>：你可以把它理解成"搬运工"。它接收一个 Dataset，按 <code>batch_size</code> 把单条数据摞成一个 batch，还能自动 shuffle（打乱顺序）、多线程加载（<code>num_workers</code>）、丢弃最后不够一个 batch 的零头（<code>drop_last</code>）。</li>
-</ul>
-<p>总结：<strong>Dataset 管"存"，DataLoader 管"搬"</strong>。下面我们把两个一起写出来。</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=4eb19350">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 我们用滑动窗口的方法</span>
-<span class="c1"># 例如：假设context长度为4，</span>
-<span class="c1"># 原始数据    = [in, the, heart, of, the, city]</span>
-<span class="c1"># input  (x)  = [in, the, heart, of]，x长度为4</span>
-<span class="c1"># target (y)  = [the, heart, of, the]，y为x向右移一位</span>
-
-<span class="c1"># 代码实现</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.utils.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dataset</span><span class="p">,</span> <span class="n">DataLoader</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">GPTDatasetV1</span><span class="p">(</span><span class="n">Dataset</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">txt</span><span class="p">,</span>
-        <span class="n">tokenizer</span><span class="p">,</span>  <span class="c1"># 分词器（这里用的是 tiktoken 的 GPT-2 BPE 分词器）</span>
-        <span class="n">max_length</span><span class="p">,</span>  <span class="c1"># 每个窗口的 token 数</span>
-        <span class="n">stride</span><span class="p">,</span>  <span class="c1"># 步长，用于控制紧挨的两个窗口之间的间隔，比如步长为2，则[1, 2, 3, 4] - [3, 4, 5, 6]</span>
-    <span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">target_ids</span> <span class="o">=</span> <span class="p">[]</span>
-
-        <span class="c1"># 将文本通过分词器处理，得到训练数据的tokenId序列</span>
-        <span class="c1"># allowed_special：告诉 tiktoken "&lt;|endoftext|&gt;" 是特殊 token，保留整体不要拆开</span>
-        <span class="c1"># 如果是单篇纯文本（比如本例的《The Verdict》），文本里没有这个符号，传不传没影响；</span>
-        <span class="c1"># 但如果训练数据是多篇文章拼接的，中间会有 &lt;|endoftext|&gt; 做分隔，就必须加上这个参数。</span>
-        <span class="n">token_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="p">{</span><span class="s2">"&lt;|endoftext|&gt;"</span><span class="p">})</span>
-        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">token_ids</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_length</span><span class="p">,</span> <span class="s2">"token_id的数量至少要大于max_length"</span>
-
-        <span class="c1"># 用滑动窗口将全文进行切分</span>
-        <span class="c1"># 比如正文为：[1, 2, 3, 4, 5, 6, 7, 8, 9], max_length = 4, stride = 2</span>
-        <span class="c1"># 则</span>
-        <span class="c1"># 第一轮：input_chunk = [1, 2, 3, 4], target_chunk = [2, 3 ,4, 5]</span>
-        <span class="c1"># 第二轮：input_chunk = [3, 4, 5, 6], target_chunk = [4, 5, 6, 7]</span>
-        <span class="c1"># ...</span>
-        <span class="c1"># self.input_ids  = [[1, 2, 3, 4], [3, 4, 5, 6]...]</span>
-        <span class="c1">#                        预测↓          预测↓</span>
-        <span class="c1"># self.target_ids = [[2, 3, 4, 5], [4, 5, 6, 7]...]</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">token_ids</span><span class="p">)</span> <span class="o">-</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">stride</span><span class="p">):</span>
-            <span class="n">input_chunk</span> <span class="o">=</span> <span class="n">token_ids</span><span class="p">[</span><span class="n">i</span> <span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="n">max_length</span><span class="p">]</span>
-            <span class="n">target_chunk</span> <span class="o">=</span> <span class="n">token_ids</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="p">:</span> <span class="n">i</span> <span class="o">+</span> <span class="n">max_length</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">input_chunk</span><span class="p">))</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">target_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">target_chunk</span><span class="p">))</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">input_ids</span><span class="p">[</span><span class="n">index</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_ids</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
-    
-
-<span class="k">def</span><span class="w"> </span><span class="nf">create_dataloader_v1</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> 
-                         <span class="n">stride</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">drop_last</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-                         <span class="n">num_workers</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">tokenizer</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-
-    <span class="c1"># 如果调用方没传 tokenizer，就自己建一个（复用外部 tokenizer 可以避免重复初始化）</span>
-    <span class="k">if</span> <span class="n">tokenizer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">"gpt2"</span><span class="p">)</span>
-
-    <span class="c1"># Create dataset</span>
-    <span class="n">dataset</span> <span class="o">=</span> <span class="n">GPTDatasetV1</span><span class="p">(</span><span class="n">txt</span><span class="p">,</span> <span class="n">tokenizer</span><span class="p">,</span> <span class="n">max_length</span><span class="p">,</span> <span class="n">stride</span><span class="p">)</span>
-
-    <span class="c1"># Create dataloader</span>
-    <span class="n">dataloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
-        <span class="n">dataset</span><span class="p">,</span>
-        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-        <span class="n">shuffle</span><span class="o">=</span><span class="n">shuffle</span><span class="p">,</span>
-        <span class="n">drop_last</span><span class="o">=</span><span class="n">drop_last</span><span class="p">,</span>
-        <span class="n">num_workers</span><span class="o">=</span><span class="n">num_workers</span>
-    <span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">dataloader</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=f784bec0">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>下面我们用导入器试试处理一下，是否能得到想要的训练样本</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=ab5796df">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [23]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">raw_text</span> <span class="o">=</span> <span class="n">DATA_PATH</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
-
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">"gpt2"</span><span class="p">)</span>
-<span class="n">encoded_str</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">raw_text</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"原始数据前20位的tokenID为"</span><span class="p">,</span> <span class="n">encoded_str</span><span class="p">[:</span><span class="mi">20</span><span class="p">])</span>
-
-<span class="c1"># 按批大小为1，窗口大小为4， 步长为1创建dataloader</span>
-<span class="n">dataloader</span> <span class="o">=</span> <span class="n">create_dataloader_v1</span><span class="p">(</span>
-    <span class="n">raw_text</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>原始数据前20位的tokenID为 [40, 367, 2885, 1464, 1807, 3619, 402, 271, 10899, 2138, 257, 7026, 15632, 438, 2016, 257, 922, 5891, 1576, 438]
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=26c7175c">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>根据执行结果原始数据转为tokenID，前20位是<br/>
-[40, 367, 2885, 1464, 1807, 3619, 402, 271, 10899, 2138, 257, 7026, 15632, 438, 2016, 257, 922, 5891, 1576, 438] <br/>
-我们根据原始数据前20位和dataloader的参数，可以先推断一下生成的数据格式<br/>
-第一批: input_ids = [40, 367, 2885, 1464], target_ids = [367, 2885, 1464, 1807]<br/>
-第二批: input_ids = [367, 2885, 1464, 1807], target_ids = [2885, 1464, 1807, 3619]</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=4940276c">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [24]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">data_iter</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">dataloader</span><span class="p">)</span>
-<span class="n">first_batch</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">data_iter</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"第一批数据"</span><span class="p">,</span> <span class="n">first_batch</span><span class="p">)</span>
-
-<span class="n">second_batch</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">data_iter</span><span class="p">)</span> <span class="c1"># 通过不断next(data_iter)获得下一批</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"第二批数据"</span><span class="p">,</span> <span class="n">second_batch</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>第一批数据 [tensor([[  40,  367, 2885, 1464]]), tensor([[ 367, 2885, 1464, 1807]])]
-第二批数据 [tensor([[ 367, 2885, 1464, 1807]]), tensor([[2885, 1464, 1807, 3619]])]
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=32baae8f">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>我们还可以用 dataloader 创建批量输出，增大步幅。</p>
-<blockquote>
-<p>关于 stride 的选择：stride 越小，切出来的样本越多，但相邻样本的输入高度重叠（只差一个 token 的位置），相当于模型把同一条文本翻来覆去背了很多遍——浪费算力，训练出来的模型泛化能力也差。一般把 stride 设成和 max_length 一样大（样本无重叠），或者 max_length 的一半左右。</p>
-</blockquote>
-<p>例如：我们创建批大小为 8，步幅为 4，窗口为 4 的 dataloader，看看它生成的数据是不是符合我们预期的那样：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=b6808824">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [25]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">dataloader</span> <span class="o">=</span> <span class="n">create_dataloader_v1</span><span class="p">(</span><span class="n">raw_text</span><span class="p">,</span> <span class="n">batch_size</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span> <span class="n">max_length</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">stride</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="n">shuffle</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-<span class="n">data_iter</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">dataloader</span><span class="p">)</span>
-<span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">data_iter</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"Inputs:</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Targets:</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Inputs:
- tensor([[   40,   367,  2885,  1464],
-        [ 1807,  3619,   402,   271],
-        [10899,  2138,   257,  7026],
-        [15632,   438,  2016,   257],
-        [  922,  5891,  1576,   438],
-        [  568,   340,   373,   645],
-        [ 1049,  5975,   284,   502],
-        [  284,  3285,   326,    11]])
-
-Targets:
- tensor([[  367,  2885,  1464,  1807],
-        [ 3619,   402,   271, 10899],
-        [ 2138,   257,  7026, 15632],
-        [  438,  2016,   257,   922],
-        [ 5891,  1576,   438,   568],
-        [  340,   373,   645,  1049],
-        [ 5975,   284,   502,   284],
-        [ 3285,   326,    11,   287]])
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=51b16f96">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>至此，我们彻底搞懂了Tokenizer和处理原始数据的方法。也就是模型输入的第一步<br/>
-即：我们要让模型读文本，先通过Tokenizer将文本转为tokenID序列</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e567dcbb">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="%E7%AC%AC%E5%9B%9B%E6%AD%A5%EF%BC%9A%E4%BB%8E%E6%95%B4%E6%95%B0%E5%88%B0%E5%90%91%E9%87%8F%E2%80%94%E2%80%94%E8%AE%A9%E6%95%B0%E5%AD%97%E6%9C%89%22%E5%90%AB%E4%B9%89%22">第四步：从整数到向量——让数字有"含义"<a class="anchor-link" href="#%E7%AC%AC%E5%9B%9B%E6%AD%A5%EF%BC%9A%E4%BB%8E%E6%95%B4%E6%95%B0%E5%88%B0%E5%90%91%E9%87%8F%E2%80%94%E2%80%94%E8%AE%A9%E6%95%B0%E5%AD%97%E6%9C%89%22%E5%90%AB%E4%B9%89%22">¶</a></h2><p>前面 dataloader 吐出来的 <code>inputs</code>，形状是 <code>[batch_size, max_length]</code>，里面全是整数。比如 <code>[40, 367, 2885, 1464]</code>。</p>
-<p>但这里有一个很容易忽略的问题：<strong>token ID 只是个编号，不是语义</strong>。ID 40 跟 ID 367 挨着，不代表这两个词意思相近——它们只是碰巧排在词表第 40 行和第 367 行而已。</p>
-<p>所以接下来做两件事：</p>
-<ol>
-<li><strong>Token Embedding</strong>：给每个 token ID 配一个"含义向量"</li>
-<li><strong>Position Embedding</strong>：给每个位置也配一个向量，告诉模型"这是第几个token"</li>
-</ol>
-<p>两者相加，才是喂给 模型 的最终输入。</p>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8bb1d9e1">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="4.1-Token-Embedding-%E2%80%94%E2%80%94-%E4%B8%80%E5%BC%A0%22%E5%8F%AF%E8%AE%AD%E7%BB%83%E7%9A%84%E6%9F%A5%E6%89%BE%E8%A1%A8%22">4.1 Token Embedding —— 一张"可训练的查找表"<a class="anchor-link" href="#4.1-Token-Embedding-%E2%80%94%E2%80%94-%E4%B8%80%E5%BC%A0%22%E5%8F%AF%E8%AE%AD%E7%BB%83%E7%9A%84%E6%9F%A5%E6%89%BE%E8%A1%A8%22">¶</a></h3><p>先用一个极小的例子感受一下。假设我们词表中有 7 个 token，想让每个 token 用 3 个数字来表示（现实中是 256~几千维）。</p>
-<p>做法很简单：初始化一张 7×3 的随机数字表，第 i 行就是 token i 的向量。训练时模型会不断调整这些数字，达到训练的效果：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=21db6e58">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [26]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">123</span><span class="p">)</span>
-
-<span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">7</span>
-<span class="n">output_dim</span> <span class="o">=</span> <span class="mi">3</span>
-
-<span class="n">embedding_layer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"embedding 矩阵形状:"</span><span class="p">,</span> <span class="n">embedding_layer</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">embedding_layer</span><span class="o">.</span><span class="n">weight</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>embedding 矩阵形状: torch.Size([7, 3])
-Parameter containing:
-tensor([[ 0.3374, -0.1778, -0.3035],
-        [-0.5880,  0.3486,  1.3010],
-        [ 1.2753, -0.2010, -0.1606],
-        [-0.4015,  0.6957, -1.8061],
-        [ 1.8960,  0.3255, -0.6315],
-        [-2.8400, -0.7849, -1.4096],
-        [-0.4076,  0.7953,  0.9985]], requires_grad=True)
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=5164ec5f">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>现在假设有一句话被 tokenizer 转成了 <code>[2, 3, 5, 1]</code>。embedding 做的事情就是——去那张表里查第 2、3、5、1 行，取出来摞在一起：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=ad7c1048">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [27]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">input_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"第 3 行的向量:"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">embedding_layer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">3</span><span class="p">])))</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">input_ids 对应的 embedding:"</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">embedding_layer</span><span class="p">(</span><span class="n">input_ids</span><span class="p">))</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">输出形状:"</span><span class="p">,</span> <span class="n">embedding_layer</span><span class="p">(</span><span class="n">input_ids</span><span class="p">)</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>第 3 行的向量:
-tensor([[-0.4015,  0.6957, -1.8061]], grad_fn=&lt;EmbeddingBackward0&gt;)
-
-input_ids 对应的 embedding:
-tensor([[ 1.2753, -0.2010, -0.1606],
-        [-0.4015,  0.6957, -1.8061],
-        [-2.8400, -0.7849, -1.4096],
-        [-0.5880,  0.3486,  1.3010]], grad_fn=&lt;EmbeddingBackward0&gt;)
-
-输出形状: torch.Size([4, 3])
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=2d7b9540">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>总结：embedding 不是对 ID 做数学运算，而是拿 ID 当索引去"查表"。这张表一开始是随机的，训练中会被反向传播不断打磨，让语义相近的词向量也相近。</p>
-</blockquote>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=7cba3a04">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="4.2-%E6%8E%A5%E4%B8%8A%E7%9C%9F%E5%AE%9E%E7%9A%84-dataloader">4.2 接上真实的 dataloader<a class="anchor-link" href="#4.2-%E6%8E%A5%E4%B8%8A%E7%9C%9F%E5%AE%9E%E7%9A%84-dataloader">¶</a></h3><p>刚才例子只有 7 个 token。回到实际场景：GPT-2 词表大小 50,257，前面 dataloader 给我们的 <code>inputs</code> 形状是 <code>[8, 4]</code>（batch_size=8, max_length=4）。</p>
-<p>给每个 token 配一个 256 维的向量：</p>
-<blockquote>
-<p>这里为了演示方便用了 256 维。真正的 GPT-2 各型号 embedding 维度分别是：Small 768、Medium 1024、Large 1280、XL 1600。维度越高，模型能编码的语义信息越丰富，但参数量和算力也成倍涨。</p>
-</blockquote>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=41b3b4ef">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [28]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">vocab_size</span> <span class="o">=</span> <span class="mi">50257</span>      <span class="c1"># GPT-2 tokenizer 的词表大小</span>
-<span class="n">output_dim</span> <span class="o">=</span> <span class="mi">256</span>       <span class="c1"># 每个 token 映射成 256 维向量</span>
-
-<span class="c1"># inputs 来自上一节的 dataloader，形状是 [batch_size, max_length]</span>
-<span class="n">token_embedding_layer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">)</span>
-<span class="n">token_embeddings</span> <span class="o">=</span> <span class="n">token_embedding_layer</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"inputs shape:"</span><span class="p">,</span> <span class="n">inputs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"token_embeddings shape:"</span><span class="p">,</span> <span class="n">token_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>inputs shape: torch.Size([8, 4])
-token_embeddings shape: torch.Size([8, 4, 256])
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0ca1494b">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>输出 <code>[8, 4, 256]</code>，拆开看：</p>
-<ul>
-<li><code>8</code>：一个 batch 里 8 条样本</li>
-<li><code>4</code>：每条样本 4 个 token</li>
-<li><code>256</code>：每个 token 现在是 256 维向量</li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=62bbea0b">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h3 id="4.3-%E8%BF%98%E7%BC%BA%E4%BB%80%E4%B9%88%EF%BC%9F%E2%80%94%E2%80%94%E4%BD%8D%E7%BD%AE%E4%BF%A1%E6%81%AF">4.3 还缺什么？——位置信息<a class="anchor-link" href="#4.3-%E8%BF%98%E7%BC%BA%E4%BB%80%E4%B9%88%EF%BC%9F%E2%80%94%E2%80%94%E4%BD%8D%E7%BD%AE%E4%BF%A1%E6%81%AF">¶</a></h3><p>Token embedding 有一个盲区：同一个词不管出现在第 0 个位置还是第 3 个位置，查出来的向量一模一样。</p>
-<p>但顺序很重要。举个中文例子：</p>
-<pre><code>"我喜欢你"  →  主语是"我"
-"你喜欢我"  →  主语是"你"
-</code></pre>
-<p>字完全一样，顺序不同，意思完全相反。如果模型不知道位置，"我喜欢你"和"你喜欢我"在它眼里是同一堆 token ID 的乱序排列——这肯定不行。</p>
-<p>所以 GPT 的做法很简单：跟 token embedding 一样，再建一张"位置查找表"。第 0 个位置有一行向量，第 1 个位置有另一行……位置向量也是随机初始化、训练中学习的。</p>
-<p>先用 4 个位置、3 维向量的小例子感受一下：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8bccbf55">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [29]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="c1"># 4 个位置，每个位置用 3 维向量表示（跟上面的 token embedding 对应）</span>
-<span class="n">max_length</span> <span class="o">=</span> <span class="mi">4</span>
-<span class="n">output_dim</span> <span class="o">=</span> <span class="mi">3</span>
-
-<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">456</span><span class="p">)</span>
-<span class="n">pos_layer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">max_length</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">)</span>
-
-<span class="c1"># 位置 0, 1, 2, 3 各自查表得到一个向量</span>
-<span class="n">pos_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_length</span><span class="p">)</span>
-<span class="n">pos_embeddings</span> <span class="o">=</span> <span class="n">pos_layer</span><span class="p">(</span><span class="n">pos_ids</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"位置 ID:"</span><span class="p">,</span> <span class="n">pos_ids</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"位置向量 shape:"</span><span class="p">,</span> <span class="n">pos_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">pos_embeddings</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>位置 ID: [0, 1, 2, 3]
-位置向量 shape: torch.Size([4, 3])
-tensor([[-2.4306,  0.7544,  1.6025],
-        [-1.1431, -0.1645,  0.6943],
-        [ 1.2980, -0.7403,  1.0322],
-        [-0.7191, -0.0373,  0.2765]], grad_fn=&lt;EmbeddingBackward0&gt;)
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d8c3253e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<blockquote>
-<p>位置 0、1、2、3 各有自己的一行向量，互不相同。这样一来，同一个词出现在"位置 0"和"位置 3"时，embedding 是一样的，但加上不同的位置向量后，最终结果就不同了——模型就能区分"我喜欢你"和"你喜欢我"。</p>
-</blockquote>
-<p>回到真实场景，GPT-2 用 256 维：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=1fdf9693">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [30]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">max_length</span> <span class="o">=</span> <span class="mi">4</span>
-<span class="n">output_dim</span> <span class="o">=</span> <span class="mi">256</span>
-
-<span class="n">position_embedding_layer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">max_length</span><span class="p">,</span> <span class="n">output_dim</span><span class="p">)</span>
-<span class="n">position_ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_length</span><span class="p">)</span>
-<span class="n">position_embeddings</span> <span class="o">=</span> <span class="n">position_embedding_layer</span><span class="p">(</span><span class="n">position_ids</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"position_ids:"</span><span class="p">,</span> <span class="n">position_ids</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"position_embeddings shape:"</span><span class="p">,</span> <span class="n">position_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>position_ids: tensor([0, 1, 2, 3])
-position_embeddings shape: torch.Size([4, 256])
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=8c63561e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p><code>position_embeddings</code> 形状是 <code>[4, 256]</code>——4 个位置各有 256 维向量。把它加到 <code>token_embeddings</code> 上：</p>
-<div class="highlight"><pre><span></span>token_embeddings:    [8, 4, 256]   ← 8 条样本各自的 token 含义
-position_embeddings:    [4, 256]   ← 4 个位置各自的位置信息
-                相加 ↓
-input_embeddings:    [8, 4, 256]   ← 最终输入
-</pre></div>
-<p>PyTorch 会自动把 <code>[4, 256]</code> 广播到 batch 里每一条样本上：</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=7231d780">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [31]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">input_embeddings</span> <span class="o">=</span> <span class="n">token_embeddings</span> <span class="o">+</span> <span class="n">position_embeddings</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="s2">"token_embeddings shape:"</span><span class="p">,</span> <span class="n">token_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"position_embeddings shape:"</span><span class="p">,</span> <span class="n">position_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">"input_embeddings shape:"</span><span class="p">,</span> <span class="n">input_embeddings</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell-outputWrapper">
-<div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser">
-</div>
-<div class="jp-OutputArea jp-Cell-outputArea">
-<div class="jp-OutputArea-child">
-<div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>token_embeddings shape: torch.Size([8, 4, 256])
-position_embeddings shape: torch.Size([4, 256])
-input_embeddings shape: torch.Size([8, 4, 256])
-</pre>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=130c439e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>这样，最终输入就准备好了。</p>
 <hr/>
-<h2 id="%E6%9C%AC%E7%AB%A0%E5%9B%9E%E9%A1%BE">本章回顾<a class="anchor-link" href="#%E6%9C%AC%E7%AB%A0%E5%9B%9E%E9%A1%BE">¶</a></h2><p>翻回开头看那张<strong>数据流全景图</strong>，现在每一行你应该都能说清楚它做了什么：</p>
-<pre><code>原始文本（自然语言）
-  │
-  ├─ [BPE Tokenizer]      → 把字/词/标点变成 token ID 序列
-  │                          V1/V2 是"背词典"，BPE 是"学词根"
-  │                          生词不会变成 &lt;|unk|&gt;，而是被拆成已知子词
-  │
-  ├─ [滑动窗口采样]        → 切成 N 道"下一个词是什么"的练习题
-  │                          input 和 target 只差一位，target 是 input 的右移
-  │
-  ├─ [Token Embedding]    → 每个 token ID 查表得到一个"含义向量"
-  │                         本质是"查表"，不是数学运算
-  │
-  └─ [+ Position Embedding] → 叠加上"位置信息"
-                                token embedding 回答"这是什么词"
-                                position embedding 回答"它在第几个位置"
-                                ↓
-                          最终输入向量（送入 Transformer）
-</code></pre>
-<p>本章的核心就一句话：<strong>把人类能读的字符串，一步步变成模型能算的张量。</strong> 每一步做了什么、为什么需要它，就是整章要讲的东西。</p>
-<p>到此，数据已经从 <code>"I HAD always thought..."</code> 变成了 <code>[8, 4, 256]</code> 的张量。下一步（第 3 章），把这些向量送进 Attention 机制——让模型学会"读"这些向量之间的关系。</p>
+<h2 id="Part-1-%E5%B0%8F%E7%BB%93%EF%BC%9A%E6%88%91%E4%BB%AC%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88%E3%80%81%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88">Part 1 小结：我们做了什么、还差什么<a class="anchor-link" href="#Part-1-%E5%B0%8F%E7%BB%93%EF%BC%9A%E6%88%91%E4%BB%AC%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88%E3%80%81%E8%BF%98%E5%B7%AE%E4%BB%80%E4%B9%88">¶</a></h2><p>到这里，你已经看到了注意力机制的<strong>核心计算链</strong>：</p>
+<div class="highlight"><pre><span></span>原始向量 → 点积(算相似度) → softmax(归一化成权重) → 加权求和(融合上下文)
+   [6,3]       [6,6]                [6,6]                 [6,3]
+</pre></div>
+<p>每个 token 的向量不再是孤立的——它融合了整句话里所有 token 的信息，融合比例由注意力权重决定。</p>
+<p>但这个方案有一个根本缺陷：**注意力权重完全由输入的原始 embedding 决定，没有任何可训练的参数。</p>
+<p>** 模型无法学会"当我是动词时该多看主语""当我是代词时该找前面的名词"——它的注意力模式被初始 embedding 锁死了。</p>
+<p>下一节（Part 2）引入 <strong>Q/K/V 三个可训练矩阵</strong>，把"去问""被问""传信息"这三件事拆开，让模型自己学会怎么分配注意力。这也就是 Transformer 论文里真正的 <strong>scaled dot-product self-attention</strong>。</p>
 </div>
 </div>
 </div>
